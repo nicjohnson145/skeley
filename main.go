@@ -66,7 +66,7 @@ func root() *cobra.Command {
 				return err
 			}
 
-			root, err := findAndParseTemplates(filepath.Join(templateDir, "files"), template.FuncMap{})
+			root, err := findAndParseTemplates(filepath.Join(selectedTemplate, "files"), template.FuncMap{})
 			if err != nil {
 				log.Err(err).Msg("parsing template files")
 				return err
@@ -131,11 +131,10 @@ func findAndParseTemplates(rootDir string, funcMap template.FuncMap) (*template.
 	root := template.New("")
 
 	err := filepath.Walk(cleanRoot, func(path string, info os.FileInfo, e1 error) error {
+		if e1 != nil {
+			return e1
+		}
 		if !info.IsDir() {
-			if e1 != nil {
-				return e1
-			}
-
 			b, e2 := os.ReadFile(path)
 			if e2 != nil {
 				log.Err(e2).Str("path", path).Msg("reading template file")
