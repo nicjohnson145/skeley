@@ -5,12 +5,12 @@ import (
 	"os"
 	"strings"
 
-	"path/filepath"
 	"fmt"
+	"path/filepath"
 
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
-	"github.com/rs/zerolog/log"
 )
 
 type TemplateConfig struct {
@@ -22,6 +22,7 @@ type TemplateConfig struct {
 type TemplateVars struct {
 	BinaryName string
 	Module     string
+	GoVersion  string
 }
 
 func root() *cobra.Command {
@@ -60,7 +61,7 @@ func root() *cobra.Command {
 				return err
 			}
 
-			module, err := getModule()
+			module, goVersion, err := getModule()
 			if err != nil {
 				log.Err(err).Msg("reading go module information")
 				return err
@@ -73,8 +74,9 @@ func root() *cobra.Command {
 			}
 
 			tmplVars := TemplateVars{
-				Module: module,
+				Module:     module,
 				BinaryName: filepath.Base(module),
+				GoVersion:  goVersion,
 			}
 			for _, fl := range conf.Files {
 				if err := renderFile(root, fl, tmplVars); err != nil {
@@ -99,7 +101,7 @@ func renderFile(tmpl *template.Template, name string, vars TemplateVars) error {
 		return err
 	}
 
-	f, err := os.OpenFile(name, os.O_RDWR | os.O_CREATE | os.O_TRUNC, 0664)
+	f, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0664)
 	if err != nil {
 		log.Err(err).Msg("opening target file")
 		return err
@@ -114,15 +116,17 @@ func renderFile(tmpl *template.Template, name string, vars TemplateVars) error {
 	return nil
 }
 
-func getModule() (string, error) {
+func getModule() (string, string, error) {
 	modBytes, err := os.ReadFile("go.mod")
 	if err != nil {
 		log.Err(err).Msg("reading go.mod")
-		return "", err
+		return "", "", err
 	}
 
 	modLines := strings.Split(string(modBytes), "\n")
-	return strings.TrimPrefix(modLines[0], "module "), nil
+	modName := strings.TrimPrefix(modLines[0], "module ")
+	goVersion := strings.TrimPrefix(modLines[2], "go ")
+	return modName, goVersion, nil
 }
 
 func findAndParseTemplates(rootDir string, funcMap template.FuncMap) (*template.Template, error) {
