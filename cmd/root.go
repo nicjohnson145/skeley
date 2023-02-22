@@ -30,5 +30,9 @@ func Root() *cobra.Command {
 	rootCmd.PersistentFlags().BoolP(config.Debug, "d", false, "Enable debug logging")
 	rootCmd.PersistentFlags().StringP(config.TemplateDir, "t", "", "Override default template directory")
 
+	rootCmd.AddCommand(
+		List(),
+	)
+
 	return rootCmd
 }

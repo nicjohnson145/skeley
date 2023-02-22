@@ -46,7 +46,27 @@ type Skeley struct {
 }
 
 func (s *Skeley) ListTemplates() ([]string, error) {
-	return nil, nil
+	templateDir, err := s.getTemplateDir()
+	if err != nil {
+		return nil, err
+	}
+
+	entries, err := os.ReadDir(templateDir)
+	if err != nil {
+		s.log.Err(err).Msg("error listing template dir")
+		return nil, err
+	}
+
+	templates := []string{}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+
+		templates = append(templates, e.Name())
+	}
+
+	return templates, nil
 }
 
 func (s *Skeley) Execute(name string) error {
