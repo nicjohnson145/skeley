@@ -8,7 +8,8 @@ import (
 )
 
 const (
-	Debug             = "debug"
+	Debug       = "debug"
+	TemplateDir = "template-dir"
 )
 
 func InitializeConfig(cmd *cobra.Command) error {
