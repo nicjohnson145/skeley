@@ -1,12 +1,16 @@
 package internal
 
 import (
+	"errors"
+	"fmt"
 	"html/template"
+	"io/fs"
 	"os"
 	"path/filepath"
 
 	"github.com/rs/zerolog"
 	"golang.org/x/mod/modfile"
+	"golang.org/x/mod/semver"
 	"gopkg.in/yaml.v3"
 )
 
@@ -29,32 +33,31 @@ type templateVars struct {
 }
 
 type SkeleyConfig struct {
-	Logger           zerolog.Logger
-	TemplateLocation string
+	Logger     zerolog.Logger
+	InputFS    fs.FS
+	OutputPath string
 }
 
 func NewSkeley(conf SkeleyConfig) *Skeley {
 	return &Skeley{
-		log:  conf.Logger,
-		conf: conf,
+		log:        conf.Logger,
+		conf:       conf,
+		inputFS:    conf.InputFS,
+		outputPath: conf.OutputPath,
 	}
 }
 
 type Skeley struct {
-	log  zerolog.Logger
-	conf SkeleyConfig
+	log        zerolog.Logger
+	conf       SkeleyConfig
+	inputFS    fs.FS
+	outputPath string
 }
 
 func (s *Skeley) ListTemplates() ([]string, error) {
-	templateDir, err := s.getTemplateDir()
+	entries, err := fs.ReadDir(s.inputFS, ".")
 	if err != nil {
-		return nil, err
-	}
-
-	entries, err := os.ReadDir(templateDir)
-	if err != nil {
-		s.log.Err(err).Msg("error listing template dir")
-		return nil, err
+		return nil, fmt.Errorf("error listing directory: %w", err)
 	}
 
 	templates := []string{}
@@ -69,14 +72,8 @@ func (s *Skeley) ListTemplates() ([]string, error) {
 	return templates, nil
 }
 
-func (s *Skeley) Execute(name string) error {
-	templateDir, err := s.getTemplateDir()
-	if err != nil {
-		return err
-	}
-
-	selectedTemplate := filepath.Join(templateDir, name)
-	config, err := s.getTemplateConfig(selectedTemplate)
+func (s *Skeley) Execute() error {
+	config, err := s.getTemplateConfig()
 	if err != nil {
 		return err
 	}
@@ -92,7 +89,12 @@ func (s *Skeley) Execute(name string) error {
 		vars.GoVersion = mod.GoVersion
 	}
 
-	root, files, err := s.findAndParseTemplates(filepath.Join(selectedTemplate, "files"), template.FuncMap{})
+	filesFS, err := fs.Sub(s.inputFS, "files")
+	if err != nil {
+		return fmt.Errorf("error creating subFS: %w", err)
+	}
+
+	root, files, err := s.findAndParseTemplates(filesFS, template.FuncMap{})
 	if err != nil {
 		return err
 	}
@@ -106,38 +108,17 @@ func (s *Skeley) Execute(name string) error {
 	return nil
 }
 
-func (s *Skeley) getTemplateDir() (string, error) {
-	if s.conf.TemplateLocation != "" {
-		return s.conf.TemplateLocation, nil
-	}
-
-	home, err := os.UserHomeDir()
+func (s *Skeley) getTemplateConfig() (templateConfig, error) {
+	content, err := fs.ReadFile(s.inputFS, "config.yaml")
 	if err != nil {
-		s.log.Err(err).Msg("error getting user home dir")
-		return "", err
-	}
-	return filepath.Join(home, ".config", "skeley", "templates"), nil
-}
-
-func (s *Skeley) getTemplateConfig(templatePath string) (templateConfig, error) {
-	path := filepath.Join(templatePath, "config.yaml")
-	if _, err := os.Stat(path); err != nil {
-		if os.IsNotExist(err) {
-			s.log.Debug().Str("path", path).Msg("no config found")
+		if errors.Is(err, fs.ErrNotExist) {
 			return templateConfig{}, nil
 		}
-		s.log.Err(err).Msg("error checking for config file")
-		return templateConfig{}, err
-	}
-
-	fBytes, err := os.ReadFile(path)
-	if err != nil {
-		s.log.Err(err).Msg("error reading config file")
-		return templateConfig{}, err
+		return templateConfig{}, fmt.Errorf("error reading config: %w", err)
 	}
 
 	var conf templateConfig
-	if err := yaml.Unmarshal(fBytes, &conf); err != nil {
+	if err := yaml.Unmarshal(content, &conf); err != nil {
 		s.log.Err(err).Msg("error unmarshalling")
 		return templateConfig{}, err
 	}
@@ -146,46 +127,49 @@ func (s *Skeley) getTemplateConfig(templatePath string) (templateConfig, error) 
 }
 
 func (s *Skeley) parseModule() (moduleInfo, error) {
-	modBytes, err := os.ReadFile("go.mod")
+	modBytes, err := os.ReadFile(s.getGoModPath())
 	if err != nil {
 		s.log.Err(err).Msg("error reading `go.mod`")
 		return moduleInfo{}, err
 	}
 
-	fl, err := modfile.Parse("go.mod", modBytes, nil)
+	fl, err := modfile.Parse("go.mod", modBytes, func(path, version string) (string, error) {
+		return semver.Canonical(version), nil
+	})
 	if err != nil {
 		s.log.Err(err).Msg("error parsing `go.mod`")
 		return moduleInfo{}, err
 	}
 
 	return moduleInfo{
-		Module: fl.Module.Mod.Path,
-		GoVersion: fl.Go.Version,
+		Module:     fl.Module.Mod.Path,
+		GoVersion:  fl.Go.Version,
 		BinaryName: filepath.Base(fl.Module.Mod.Path),
 	}, nil
 }
 
-func (s *Skeley) findAndParseTemplates(rootDir string, funcMap template.FuncMap) (*template.Template, []string, error) {
-	cleanRoot := filepath.Clean(rootDir)
-	pfx := len(cleanRoot) + 1
+func (s *Skeley) getGoModPath() string {
+	return filepath.Join(s.outputPath, "go.mod")
+}
+
+func (s *Skeley) findAndParseTemplates(fsys fs.FS, funcMap template.FuncMap) (*template.Template, []string, error) {
 	root := template.New("")
 
 	filenames := []string{}
 
-	err := filepath.Walk(cleanRoot, func(path string, info os.FileInfo, e1 error) error {
+	err := fs.WalkDir(fsys, ".", func(path string, info fs.DirEntry, e1 error) error {
 		if e1 != nil {
 			return e1
 		}
 		if !info.IsDir() {
-			b, e2 := os.ReadFile(path)
+			b, e2 := fs.ReadFile(fsys, path)
 			if e2 != nil {
 				s.log.Err(e2).Str("path", path).Msg("reading template file")
 				return e2
 			}
 
-			name := path[pfx:]
-			filenames = append(filenames, name)
-			t := root.New(name).Funcs(funcMap)
+			filenames = append(filenames, path)
+			t := root.New(path).Funcs(funcMap)
 			_, e2 = t.Parse(string(b))
 			if e2 != nil {
 				s.log.Err(e2).Str("path", path).Msg("parsing template file")
@@ -195,17 +179,22 @@ func (s *Skeley) findAndParseTemplates(rootDir string, funcMap template.FuncMap)
 
 		return nil
 	})
+	if err != nil {
+		return nil, nil, err
+	}
 
-	return root, filenames, err
+	return root, filenames, nil
 }
 
 func (s *Skeley) renderFile(tmpl *template.Template, name string, vars templateVars) error {
-	if err := os.MkdirAll(filepath.Dir(name), 0775); err != nil {
+	output := filepath.Join(s.outputPath, name)
+
+	if err := os.MkdirAll(filepath.Dir(output), 0775); err != nil {
 		s.log.Err(err).Msg("making containing directory")
 		return err
 	}
 
-	f, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0664)
+	f, err := os.OpenFile(output, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0664)
 	if err != nil {
 		s.log.Err(err).Msg("opening target file")
 		return err

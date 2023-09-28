@@ -1,6 +1,10 @@
 package cmd
 
 import (
+	"fmt"
+	"io/fs"
+	"os"
+
 	"github.com/nicjohnson145/skeley/config"
 	"github.com/nicjohnson145/skeley/internal"
 	"github.com/spf13/cobra"
@@ -20,15 +24,24 @@ func Root() *cobra.Command {
 			return config.InitializeConfig(cmd)
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			templates := os.DirFS(viper.GetString(config.TemplateDir))
+			selected, err := fs.Sub(templates, args[0])
+			if err != nil {
+				return fmt.Errorf("error creating subFS: %w", err)
+			}
+
 			skeley := internal.NewSkeley(internal.SkeleyConfig{
 				Logger: config.InitLogger(),
-				TemplateLocation: viper.GetString(config.TemplateDir),
+				InputFS: selected,
+				OutputPath: viper.GetString(config.OutputDirectory),
 			})
-			return skeley.Execute(args[0])
+			return skeley.Execute()
 		},
 	}
-	rootCmd.PersistentFlags().BoolP(config.Debug, "d", false, "Enable debug logging")
-	rootCmd.PersistentFlags().StringP(config.TemplateDir, "t", "", "Override default template directory")
+	rootCmd.PersistentFlags().BoolP(config.Debug, "d", config.DefaultDebug, "Enable debug logging")
+	rootCmd.PersistentFlags().StringP(config.TemplateDir, "t", "", "Override default template directory of '~/.config/skeley/templates'")
+
+	rootCmd.Flags().StringP(config.OutputDirectory, "o", config.DefaultOutputDirectory, "Where to output the rendered template")
 
 	rootCmd.AddCommand(
 		List(),

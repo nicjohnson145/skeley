@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/nicjohnson145/skeley/config"
 	"github.com/nicjohnson145/skeley/internal"
@@ -17,7 +18,7 @@ func List() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			skeley := internal.NewSkeley(internal.SkeleyConfig{
 				Logger: config.InitLogger(),
-				TemplateLocation: viper.GetString(config.TemplateDir),
+				InputFS: os.DirFS(viper.GetString(config.TemplateDir)),
 			})
 			tmpls, err := skeley.ListTemplates()
 			if err != nil {
