@@ -28,6 +28,7 @@ const (
 	KeyPath         = "key-path"
 	Token           = "token"
 	TokenUser       = "token-user"
+	BranchName      = "branch-name"
 )
 
 const (

@@ -73,6 +73,7 @@ func (s *Skeley) ListTemplates() ([]string, error) {
 }
 
 func (s *Skeley) Execute() error {
+	s.log.Debug().Msg("attempting to read template config")
 	config, err := s.getTemplateConfig()
 	if err != nil {
 		return err
@@ -80,6 +81,7 @@ func (s *Skeley) Execute() error {
 
 	vars := templateVars{}
 	if !config.NotModule {
+		s.log.Debug().Msg("template is configured as go module, attempting to parse go.mod")
 		mod, err := s.parseModule()
 		if err != nil {
 			return err
@@ -159,7 +161,7 @@ func (s *Skeley) findAndParseTemplates(fsys fs.FS, funcMap template.FuncMap) (*t
 
 	err := fs.WalkDir(fsys, ".", func(path string, info fs.DirEntry, e1 error) error {
 		if e1 != nil {
-			return e1
+			return fmt.Errorf("error from walk function: %w", e1)
 		}
 		if !info.IsDir() {
 			b, e2 := fs.ReadFile(fsys, path)

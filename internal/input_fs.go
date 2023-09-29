@@ -5,16 +5,17 @@ import (
 	"io/fs"
 	"os"
 
+	"github.com/forensicanalysis/gitfs"
+	billymem "github.com/go-git/go-billy/v5/memfs"
 	git "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v5/storage/memory"
-	billymem "github.com/go-git/go-billy/v5/memfs"
 	"github.com/nicjohnson145/skeley/config"
 	"github.com/rs/zerolog"
 	"github.com/spf13/viper"
-	"github.com/forensicanalysis/gitfs"
 )
 
 
@@ -40,11 +41,20 @@ func fsFromGit(logger zerolog.Logger, template string) (fs.FS, error) {
 		return nil, err
 	}
 
-	workTree := billymem.New()
-	_, err = git.Clone(memory.NewStorage(), workTree, &git.CloneOptions{
+	opts := &git.CloneOptions{
 		URL: viper.GetString(config.TemplateDir),
 		Auth: auth,
-	})
+		Depth: 1,
+	}
+	if name := viper.GetString(config.BranchName); name != "" {
+		logger.Debug().Str("branch", name).Msg("checking out non-default branch")
+		opts.ReferenceName = plumbing.NewBranchReferenceName(name)
+		opts.SingleBranch = true
+	}
+
+	logger.Debug().Msg("cloning repo")
+	workTree := billymem.New()
+	_, err = git.Clone(memory.NewStorage(), workTree, opts)
 	if err != nil {
 		return nil, fmt.Errorf("error cloning repo: %w", err)
 	}
