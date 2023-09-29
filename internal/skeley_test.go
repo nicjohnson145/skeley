@@ -158,28 +158,6 @@ func TestFindAndParseTemplates(t *testing.T) {
 }
 
 func TestExecute(t *testing.T) {
-	fsEqual := func(t *testing.T, left fs.FS, right fs.FS) {
-		t.Helper()
-
-		require.NoError(t, fs.WalkDir(left, ".", func(path string, d fs.DirEntry, e1 error) error {
-			if e1 != nil {
-				return e1
-			}
-
-			if d.IsDir() {
-				return nil
-			}
-
-			leftContent, err := fs.ReadFile(left, path)
-			require.NoError(t, err)
-			rightContent, err := fs.ReadFile(right, path)
-			require.NoError(t, err)
-
-			require.Equal(t, string(leftContent), string(rightContent))
-
-			return nil
-		}))
-	}
 	t.Run("simple module", func(t *testing.T) {
 		dir := t.TempDir()
 		destFS := os.DirFS(dir)

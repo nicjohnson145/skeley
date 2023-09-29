@@ -2,12 +2,10 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/nicjohnson145/skeley/config"
 	"github.com/nicjohnson145/skeley/internal"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 func List() *cobra.Command {
@@ -16,10 +14,18 @@ func List() *cobra.Command {
 		Short: "List available templates",
 		Args: cobra.ExactArgs(0),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			log := config.InitLogger()
+
+			inputFS, err := internal.InputFSFromEnv(log, args[0])
+			if err != nil {
+				return err
+			}
+
 			skeley := internal.NewSkeley(internal.SkeleyConfig{
-				Logger: config.InitLogger(),
-				InputFS: os.DirFS(viper.GetString(config.TemplateDir)),
+				Logger: log,
+				InputFS: inputFS,
 			})
+
 			tmpls, err := skeley.ListTemplates()
 			if err != nil {
 				return err

@@ -10,15 +10,30 @@ import (
 	"github.com/spf13/viper"
 )
 
+//go:generate go-enum -f $GOFILE -marshal -names -flag
+
+/*
+ENUM(
+local
+git
+)
+*/
+type SourceType string
+
 const (
 	Debug           = "debug"
 	TemplateDir     = "template-dir"
 	OutputDirectory = "output-dir"
+	InputType       = "input-type"
+	KeyPath         = "key-path"
+	Token           = "token"
+	TokenUser       = "token-user"
 )
 
 const (
 	DefaultDebug           = false
 	DefaultOutputDirectory = "."
+	DefaulInputType        = SourceTypeLocal
 )
 
 func InitializeConfig(cmd *cobra.Command) error {
@@ -34,6 +49,7 @@ func InitializeConfig(cmd *cobra.Command) error {
 
 	viper.SetDefault(Debug, DefaultDebug)
 	viper.SetDefault(OutputDirectory, DefaultOutputDirectory)
+	viper.SetDefault(InputType, DefaulInputType)
 
 	viper.BindPFlags(cmd.Flags())
 
